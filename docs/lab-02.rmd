@@ -1,0 +1,188 @@
+---
+title: "Geography 176A"
+author: "[Kyler Plouffe](https://kplouffe.github.io/kplouffe/)"
+subtitle: 'Lab 03: COVID-19 Pandemic'
+output:
+  html_document:
+    theme: journal
+---
+## Question 1
+```{r}
+#attach packages
+library(tidyverse)
+library(knitr)
+library(readxl)
+library(zoo)
+
+covid = read_csv('https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties.csv')
+
+head(covid, 5)
+
+countydata = covid %>% 
+  filter(state == "California") %>% 
+  group_by(county) %>% 
+  mutate(newCases = cases - lag(cases)) %>% 
+  ungroup()
+ 
+```
+
+ 
+```{r}
+countydata2= countydata %>% 
+  filter(date == max(date))
+
+(most_new_cases = countydata2 %>% 
+  slice_max(newCases, n = 5) %>% 
+  select(county, newCases))
+  
+(most_cumulative_cases = countydata2 %>% 
+  slice_max(cases, n = 5) %>% 
+  select(county, cases))
+
+knitr::kable(most_new_cases, 
+             caption = "Most New Cases California Counties",
+             col.names = c("County", "New Cases"),
+             format.args = list(big.mark = ","))
+knitr::kable(most_cumulative_cases, 
+             caption = "Most Cumulative Cases California Counties",
+             col.names = c("County", "Total Cases"),
+             format.args = list(big.mark = ","))
+```
+  
+
+```{r}
+library(readxl)
+pop <- read_excel("~/github/geog-176A-labs/data/PopulationEstimates.xls", skip=2)
+names(pop)
+
+p2=pop %>% 
+  select(fips=FIPStxt, state= State, county=Area_Name, pop2019=POP_ESTIMATE_2019) %>% 
+  filter(state=="CA") %>% 
+  group_by(county) %>% 
+  slice_max(pop2019, n=1) %>% 
+  select(fips, pop2019)
+  
+covidpop = inner_join(countydata, p2, by="fips")
+count(covidpop)
+head(covidpop)
+```
+
+```{r}
+covidpop2=covidpop %>% 
+  filter(date==max(date))
+
+(most_new_cases_capita = covidpop2 %>% 
+  mutate(CPC=cases/pop2019) %>% 
+  slice_max(CPC, n = 5) %>% 
+  select(county.x, CPC))
+  
+(most_cumulative_cases_capita = covidpop2 %>% 
+  mutate(NCPC=newCases/pop2019) %>% 
+  slice_max(NCPC, n = 5) %>% 
+  select(county.x, NCPC))
+
+knitr::kable(most_new_cases_capita, 
+             caption = "Most New Cases per Capita in California Counties",
+             col.names = c("County", "New Cases per Capita"),
+             format.args = list(big.mark = ","))
+knitr::kable(most_cumulative_cases_capita, 
+             caption = "Most Cumulative Cases per Capita in California Counties",
+             col.names = c("County", "Total Cases per Capita"),
+             format.args = list(big.mark = ","))
+```
+
+```{r}
+library(dplyr)
+covidpop3=covidpop %>% 
+  filter(date >= max(date)-14) %>% 
+  group_by(county.x, fips) %>% 
+  summarize(newCases=sum(newCases)) %>% 
+  inner_join(p2, by="fips") %>% 
+  select(county,newCases,pop2019)
+print((sum(covidpop3$newCases)/sum(covidpop3$pop2019))*100000)
+
+
+```
+The total number of new cases for the state of California is 
+```{r}
+print(sum(most_cumulative_cases$cases))
+```
+The total number of new cases for the state of California is
+```{r}
+print(sum(most_new_cases$newCases))
+```
+The safest counties that have not yet broken the COVID-19 guidelines include:
+```{r}
+safe_county=covidpop3 %>%
+  mutate(guideline=(newCases/pop2019)*100000) %>% 
+  filter(guideline<100) %>% 
+  pull(county) ->
+  safe_counties
+  
+print(safe_counties)
+```
+
+## Question 2
+```{r}
+state.of.interest=c("New York", "California", "Louisiana", "Florida")
+covid %>%
+  filter(state==state.of.interest) %>%
+  group_by(state, date) %>%
+  summarise(cases = sum(cases)) %>%
+  ungroup() %>%
+  mutate(newCases = cases - lag(cases),
+         roll7 = rollmean(newCases, 7, fill = NA, align="right")) %>%
+  ggplot(aes(x = date, y = newCases, color = state)) +
+  geom_line(size = 1) +
+  facet_wrap(~state) +
+  ggthemes::theme_solarized() +
+  theme(legend.position = 'NA') +
+  labs(title = "Daily New Case Counts",
+       subtitle = "Data Source: NY-Times",
+       x = "Date",
+       y = "New Cases")
+
+```
+
+```{r}
+state.of.interest=c("New York", "California", "Louisiana", "Florida")
+p3=pop %>% 
+  select(fips=FIPStxt, state=Area_Name, pop2019=POP_ESTIMATE_2019) %>% 
+  group_by(state) %>% 
+  slice_max(pop2019, n=1) %>% 
+  select(fips, pop2019)
+
+percapdata=covid %>%
+  filter(state %in% c("New York", "California", "Louisiana", "Florida" )) %>%
+  group_by(state, date) %>% 
+  summarize(cases=sum(cases), .groups="drop") %>% 
+  mutate(newCases = cases - lag(cases)) %>% 
+  group_by(state) %>% 
+  right_join(p3, by="state") %>% 
+  mutate(percap= newCases/pop2019,
+         roll7 = rollmean(percap, 7, fill = NA, align="right"))
+#making the second per capita graph
+percapdata %>% 
+  ggplot(aes(x = date, y = percap, color = state)) +
+  geom_line(size = 1) +
+  facet_wrap(~state) +
+  ggthemes::theme_solarized() +
+  theme(legend.position = 'NA') +
+  labs(title = "Daily New Case Counts",
+       subtitle = "Data Source: NY-Times",
+       x = "Date",
+       y = "New Cases per Capita")
+```
+
+
+Scaling by population makes some states appear much better, and makes others appear worse. This is because it places the new case counts in a ratio with the total population, so we get a better idea of what percentage of the population actually has covid.
+
+
+
+
+
+
+
+
+
+
