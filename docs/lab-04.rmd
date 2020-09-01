@@ -1,0 +1,218 @@
+---
+title: "Geography 176A"
+author: "[Kyler Plouffe](https://kplouffe.github.io/kplouffe/)"
+subtitle: 'Lab 04: Tesselations, Point-in-Polygon'
+output:
+  html_document:
+    theme: journal
+---
+
+```{r}
+# SPDS
+library(tidyverse)
+library(sf)
+library(units)
+
+# Data
+library(USAboundaries)
+library(rnaturalearth)
+
+# Visualization
+library(gghighlight)
+library(ggrepel)
+library(knitr)
+library(rmapshaper)
+library(maps)
+library(leaflet)
+library(mapview)
+```
+
+### Question 1
+```{r error = TRUE}
+#1.1
+conus = USAboundaries::us_counties() %>%
+  filter(!state_name %in% c("Puerto Rico",
+                            "Alaska",
+                            "Hawaii")) %>% 
+  st_transform(5070)
+st_geometry(conus)
+
+#1.2
+mp_counties= conus %>% 
+  group_by(state_name) %>% 
+  summarise() 
+
+c_counties= mp_counties %>% 
+  st_centroid() %>% 
+  st_union()
+
+#1.3
+v_grid = st_voronoi(mp_counties) %>% 
+  st_cast() %>% 
+  st_as_sf() %>% 
+  mutate(id = 1:n())
+
+t_grid = st_triangulate(mp_counties) %>% 
+  st_cast() %>% 
+  st_as_sf() %>% 
+  mutate(id = 1:n())
+
+sq_grid = st_make_grid(c_counties, n = c(70, 50)%>% 
+  st_as_sf() %>% 
+  mutate(id = 1:n())
+
+hex_grid = st_make_grid(c_counties, n = 70, square = FALSE) %>% 
+  st_as_sf() %>% 
+  mutate(id = 1:n())
+
+#1.4 & 1.5
+boundary = conus %>% 
+  st_union() %>% 
+  st_cast("MULTILINESTRING") %>% 
+  ms_simplify(keep = .0000000000001)
+print(mapview::npts(boundary))
+plot(boundary)
+
+#1.6
+v_grid = st_intersection(v_grid, boundary)
+
+t_grid = st_intersection(t_grid, boundary)
+
+#1.7
+plot_tess = function(data, title){
+  ggplot() + 
+    geom_sf(data = data, fill = "white", col = "navy", size = .2) +   
+    theme_void() +
+    labs(title = title, caption = paste("This tesselation has:", nrow(data), "tiles" )) +
+    theme(plot.title = element_text(hjust = .5, color =  "navy", face = "bold"))
+}
+plot_tess(hex_grid, "hex")
+plot_tess(v_grid, "voronoi")
+plot_tess(t_grid, triangulate)
+plot_tess(sq_grid, "square")
+```
+
+### Question 2
+```{r error = TRUE}
+#2.1
+sum_tess = function(data, var) {
+ data = data %>% 
+    mutate(area = data %>% 
+             st_area() %>% 
+             set_units("km^2") %>% 
+             drop_units())
+  var <- data.frame("tesselation" = var, "features" = count(data$id), "mean_area" = mean(data$area), "std" = sd(data$area, na.rm = FALSE), "total_area" = sum(data$area))
+  return(var)
+  }
+
+#2.2
+sum_tess(hex_grid, "hex")
+sum_tess(v_grid, "voronoi")
+sum_tess(t_grid, "triangulate")
+sum_tess(sq_grid, "square")
+
+#2.3
+tess_summary = bind_rows(
+  sum_tess(hex_grid, "hex"),
+  sum_tess(v_grid, "voronoi"),
+  sum_tess(t_grid, "triangulate"),
+  sum_tess(sq_grid, "square"),
+  sum_tess(mp_counties, "raw"))
+
+#2.4
+knitr::kable(tess_summary, 
+             caption = "Summary of Tesellations",
+             col.names = c("Tesselation", "# of Features", "Mean Area (km^2", "Standard Deviation", "Total Area (km^2"),
+             format.args = list(big.mark = ","))
+#2.5
+#The voronoi tessellation returns back an area much bigger than the raw data, potentially leading to more calculations. The Triangulate and raw data are quite similar so triangulation is likely a good way of representing data. Square and hex have the least area and so are likely easiest to calculate.
+```
+
+### Question 3
+```{r error = TRUE}
+#3.1
+dams<-readxl::read_excel("~/github/geog-176A-labs/data/NID2019_U.xlsx")
+
+sf_dams = dams[!is.na(dams$LONGITUDE)&!is.na(dams$LATITUDE),] 
+
+sf_dams = st_as_sf(sf_dams,
+           coords=c("LONGITUDE", "LATITUDE"),
+           crs= 5070) 
+st_geometry(sf_dams)
+
+#3.2
+point_in_polygon3 = function(points, polygon, group){
+  st_join(polygon, points) %>%
+    st_drop_geometry() %>%
+    count(group) %>%
+    setNames(c(group, "n")) %>%
+    left_join(polygon, by = group) %>%
+    st_as_sf()
+}
+
+
+#3.3
+hex_pip = point_in_polygon3(sf_dams, hex_grid, id)
+v_pip = point_in_polygon3(sf_dams, v_grid, id)
+sq_pip = point_in_polygon3(sf_dams, sq_grid, id)
+t_pip = point_in_polygon3(sf_dams, t_grid, id)
+raw_pip = point_in_polygon3(sf_dams, mp_counties, RECORDID)
+
+#3.4
+plot_pip = function(data){
+  ggplot() + 
+    geom_sf(data = data, aes(fill = count(n)), alpha = .9, size = .2) + 
+    scale_fill_gradient("viridis") + 
+    theme_void() + 
+    theme(legend.position = 'none',
+          caption = paste0(sum(data$n), "total dams")) 
+}
+
+#3.5
+plot_pip(hex_pip)
+plot_pip(v_pip)
+plot_pip(t_pip)
+plot_pip(sq_pip)
+plot_pip(raw_pip)
+
+#3.6
+#I was unable to get my code to work, however I would likely choose the hex tesselation because it is aesthetically pleasing and relatively quick to calculate.
+
+```
+
+### Question 4
+```{r error = TRUE}
+#4.1
+#I will choose recreation, water supply, fish and wildlife, and irrigation because these are all human needs that can potentially be in conflict with eachother.
+dams_R = sf_dams %>% 
+  filter(grepl("R", sf_dams$PURPOSES) == "TRUE")
+dams_S = sf_dams %>% 
+  filter(grepl("S", sf_dams$PURPOSES) == "TRUE")
+dams_F = sf_dams %>% 
+  filter(grepl("F", sf_dams$PURPOSES) == "TRUE")
+dams_I = sf_dams %>% 
+  filter(grepl("I", sf_dams$PURPOSES) == "TRUE")
+
+#4.2
+plot_pip2 = function(data){
+  ggplot() + 
+    geom_sf(data = data, aes(fill = count(n)), alpha = .9, size = .2) + 
+    scale_fill_gradient("viridis") + 
+    theme_void() + 
+    theme(legend.position = 'none',
+          caption = paste0(sum(data$n), "total dams")) +
+    gghighlight(count(n)> (mean(data)+sd(data)))
+}
+
+plot_pip2(dams_R)
+plot_pip2(dams_S)
+plot_pip2(dams_F)
+plot_pip2(dams_I)
+
+#4.3
+#The dams would likely be distributed around large water systems such as the mississippi river system. 
+
+```
+
+
+

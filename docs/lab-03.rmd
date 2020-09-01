@@ -45,6 +45,7 @@ boundary_sf = st_as_sf(rnaturalearth::countries110,
                             "Mexico")) %>% 
   st_transform(eqdc)
 st_geometry(boundary_sf)
+plot(boundary_sf)
 
 #1.4
 cities=read_csv("../data/uscities.csv")
@@ -213,41 +214,6 @@ ggplot()+
 
 ### Question 4
 ```{r}
-#4.1
-within_bz = cities_sf %>% 
-  filter(drop_units(distance_to_usb) <= 160)
-
-bz_info = data.frame("cities" = count(within_bz), 
-                     "pop" = sum(within_bz$population), 
-                     "percent" = (sum(within_bz$population)/sum(cities_sf$population)*100), "estimate" = "Yes!")
-
-knitr::kable((bz_info %>% 
-               select(cities.n, pop, percent, estimate)), 
-             caption = "Quantifying the Border Zone",
-             col.names = c("Number of Cities in 100 Mile Zone", "Population of the Zone", "Percentage of US Population Living in Zone", "Does this match the 2/3 ACLU Estimate?"),
-             format.args = list(big.mark = ","))
-
-#4.2
-ggplot()+
-  geom_sf(data = us_c_ml, size = .2, fill = "NA")+
-  geom_sf(data = drop_units(cities_sf), 
-          aes(color = distance_to_usb), 
-          size = .5)+
-  scale_color_gradient(low = 'orange', high = "darkred") +
-  gghighlight(distance_to_usb < 100) +
-  ggrepel::geom_label_repel(
-    data = (drop_units(cities_sf) %>% 
-              filter(distance_to_usb < 100) %>% 
-              group_by(state_name) %>% 
-              slice_max(population, n = 1)),
-    aes(label = city, geometry = geometry),
-    stat = "sf_coordinates",
-    size = 2) +
-  ggthemes::theme_map() 
-
-
-
-
 
 ```
 
