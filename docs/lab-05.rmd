@@ -1,0 +1,234 @@
+---
+title: "Geography 176A"
+author: '[Kyler Plouffe](https://kplouffe.github.io/kplouffe/)'
+subtitle: 'Lab 05: Rasters and Remote Sensing'
+output:
+  html_document:
+    theme: journal
+  pdf_document: default
+---
+
+
+```{r setup, include=FALSE}
+# SPDS
+library(tidyverse)
+library(sf)
+library(units)
+
+# Data
+library(USAboundaries)
+library(rnaturalearth)
+
+# Visualization
+library(gghighlight)
+library(ggrepel)
+library(knitr)
+library(rmapshaper)
+library(mapview)
+library(leaflet)
+library(elevatr)
+library(raster)
+library(getlandsat)
+
+knitr::opts_chunk$set(cache = F)
+```
+
+### Question 1
+```{r}
+setwd("C:/Users/slaye/Documents/github/geog-176A-labs/")
+bb=read_csv("data/uscities.csv") %>% 
+  st_as_sf(coords = c("lng", "lat"), crs = 4326) %>% 
+  filter(city == "Palo", state_name == "Iowa") %>% 
+  st_transform(5070) %>% 
+  st_buffer(5000) %>% 
+  st_bbox() %>% 
+  st_as_sfc() %>% 
+  st_as_sf()
+```
+
+### Question 2
+```{r}
+#2.2
+setwd("C:/Users/slaye/Documents/github/geog-176A-labs/")
+meta = read_csv("data/palo-flood-scene.csv")
+
+files = lsat_scene_files(meta$download_url) %>% 
+  filter(grepl(paste0("B", 1:6, ".TIF$", collapse = "|"), file)) %>% 
+  arrange(file) %>% 
+  pull(file)
+
+#2.3
+st = sapply(files, lsat_image)
+
+s = stack(st) %>% setNames(c(paste0("band", 1:6)))
+
+#2.4
+cropper = bb %>% st_transform(crs(s))
+
+r = crop(s, cropper)
+
+r
+```
+dimensions : 340, 346, 117640, 6  (nrow, ncol, ncell, nlayers)
+crs        : +proj=utm +zone=15 +datum=WGS84 +units=m +no_defs 
+resolution : 30, 30  (x, y)
+
+### Question 3
+```{r}
+#1.1
+par(mfrow = c(2,2))
+RGB = plotRGB(r, r=4, g=3, b=2)
+NIRRG = plotRGB(r, r=5, g=4, b=3)
+NIRSWIR1G = plotRGB(r, r=5, g=6, b=4)
+TIRSCoastalCirrus = plotRGB(r, r=10, g=1, b=9)
+
+#3.2
+par(mfrow = c(2,2))
+RGB2 = plotRGB(r, r=4, g=3, b=2, stretch = "lin")
+NIRRG2 = plotRGB(r, r=5, g=4, b=3, stretch = "lin")
+NIRSWIR1G2 = plotRGB(r, r=5, g=6, b=4, stretch = "hist")
+TIRSCoastalCirrus2 = plotRGB(r, r=10, g=1, b=9, stretch = "hist")
+
+```
+The stretch improves the contrast in th emiage so you can see the color differences better.
+
+### Question 4
+```{r}
+#4.1
+ndvi = (r$band5 - r$band4) / (r$band5 + r$band4)
+ndwi = (r$band3 - r$band5) / (r$band3 + r$band5)
+mndwi = (r$band3 - r$band6) / (r$band3 + r$band6)
+wri = (r$band3 + r$band4) / (r$band5 + r$band6)
+swi = 1 / sqrt(r$band2 - r$band6)
+
+palette = colorRampPalette(c("blue", "white", "red"))
+
+(water = stack(ndvi, ndwi, mndwi, wri, swi) %>% 
+  setNames(c("vegetation", "water", "modwater", "waterratio", "simplewater")))
+plot(water, col = palette(256))
+
+#4.2
+thresholding1 = function(x){ifelse(x < 0, 1, NA)}
+thresholding2 = function(x){ifelse(x > 0, 1, NA)}
+thresholding3 = function(x){ifelse(x > 0, 1, NA)}
+thresholding4 = function(x){ifelse(x > 1, 1, NA)}
+thresholding5 = function(x){ifelse(x < 5, 1, NA)}
+
+f1 = calc(ndvi, thresholding1)
+f2 = calc(ndwi, thresholding2)
+f3 = calc(mndwi, thresholding3)
+f4 = calc(wri, thresholding4)
+f5 = calc(swi, thresholding5)
+
+(flood = stack(f1, f2, f3, f4, f5) %>% 
+  setNames(c("vegetation", "water", "modwater", "waterratio", "simplewater")))
+plot(flood, col = "blue")
+
+
+
+```
+
+### Question 5
+```{r}
+#5.1
+set.seed
+
+#5.2
+rvalues = getValues(r) %>% 
+  na.omit
+dim(rvalues)
+#these values indicate that the values were extracted as points from 2 separate groups
+par(mfrow = c(2,2))
+kave = stats::kmeans(rvalues, 4)
+kmeans_raster = flood$water
+values(kmeans_raster) = kave$cluster
+plot(kmeans_raster)
+
+kave = stats::kmeans(rvalues, 8)
+kmeans_raster = flood$water
+values(kmeans_raster) = kave$cluster
+plot(kmeans_raster)
+
+kave = stats::kmeans(rvalues, 12)
+kmeans_raster = flood$water
+values(kmeans_raster) = kave$cluster
+plot(kmeans_raster)
+
+kave = stats::kmeans(rvalues, 16)
+kmeans_raster = flood$water
+values(kmeans_raster) = kave$cluster
+plot(kmeans_raster)
+
+```
+```{r}
+#5.3
+kave = stats::kmeans(rvalues, 14)
+kmeans_raster = flood$water
+values(kmeans_raster) = kave$cluster
+plot(kmeans_raster)
+
+f1[is.na(f2[])] <- 0 
+f2[is.na(f2[])] <- 0 
+f3[is.na(f2[])] <- 0 
+f4[is.na(f2[])] <- 0 
+f5[is.na(f2[])] <- 0 
+
+floodtable = table(values(f2), values(kmeans_raster))
+floodtable
+which.max(floodtable)
+
+thresholding6 = function(x){ifelse(x > 5, 1, NA)}
+f6 = calc(kmeans_raster, thresholding6)
+
+flood2 = stack(f1, f2, f3, f4, f5, f6) %>% 
+  setNames(c("vegetation", "water", "modwater", "waterratio", "simplewater", "kmeans"))
+plot(flood2, col = "blue")
+
+```
+
+### Question 6
+```{r}
+stats = cellStats(flood2, sum)
+stats = (stats*900)/1000
+knitr::kable(stats, 
+             caption = "Area in km^2 Affected by Flooding per Raster",
+            
+             format.args = list(big.mark = ","))
+
+uncertain = calc(flood2, fun = sum)
+
+plot(uncertain)
+mapview(uncertain)
+
+```
+Some of the cell values are not an even number because the data is averaged over the raster box, meaning the boxes were partially overlapped somehow which leads to a number that is not an integer.
+
+### Extra Credit
+```{r error = TRUE}
+bb2 = st_transform(bb, 4326)
+
+osm = osmdata::opq(bb2) %>% 
+  osmdata::add_osm_feature("building") %>% 
+  osmdata::osmdata_sf()
+leaflet() %>% 
+  setView(lng=-91.78943, lat=42.06307, zoom = 13) %>% 
+  addProviderTiles(providers$CartoDB) 
+
+local <- st_point(c(-91.78943, 42.06307))
+
+sf_local = st_sfc(local, crs = st_crs(flood2)) %>% 
+  st_cast("POINT")
+
+sf_local
+
+floodvalue = raster::extract(flood2, sf_local, na.rm = TRUE)
+
+flood2
+```
+
+
+
+
+
+
+
