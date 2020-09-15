@@ -1,11 +1,15 @@
 ---
 title: "Geography 176A"
 author: "[Kyler Plouffe](https://kplouffe.github.io/kplouffe/)"
-subtitle: 'Lab 03: COVID-19 Pandemic'
+subtitle: 'Lab 02: COVID-19 Pandemic'
 output:
   html_document:
     theme: journal
 ---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, out.width = "75%", fig.align = 'center')
+```
+
 ## Question 1
 ```{r}
 #attach packages

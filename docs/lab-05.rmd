@@ -7,9 +7,11 @@ output:
     theme: journal
   pdf_document: default
 ---
-
-
 ```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, out.width = "75%", fig.align = 'center')
+```
+
+```{r}
 # SPDS
 library(tidyverse)
 library(sf)
